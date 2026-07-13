@@ -22,7 +22,7 @@ var endpoints = []endpoint{{"cn", "https://hyp-api.mihoyo.com", "jGHBHlcOq1", "d
 type opts struct {
 	region, branch string
 	threads        int
-	yes, dry, json bool
+	yes, dry, json, silent bool
 }
 
 func main() {
@@ -116,8 +116,10 @@ func parseOptions(a []string) ([]string, opts, bool, error) {
 			if _, e = fmt.Sscan(v, &o.threads); e != nil {
 				return nil, o, false, fmt.Errorf("invalid --threads %q", v)
 			}
-		case "yes", "silent":
+		case "yes":
 			o.yes = true
+		case "silent":
+			o.silent = true
 		case "dry-run":
 			o.dry = true
 		case "json":
@@ -235,17 +237,49 @@ func pick(ctx context.Context, want string, verbose bool) (endpoint, error) {
 		}(ep)
 	}
 	var ok []result
-	for range endpoints {
-		r := <-ch
+	// Wait for at least the first probe to complete.
+	r1 := <-ch
+	if verbose {
+		if r1.err != nil {
+			fmt.Printf("%-6s unavailable (%v)\n", r1.ep.Name, r1.err)
+		} else {
+			fmt.Printf("%-6s %s\n", r1.ep.Name, r1.latency.Round(time.Millisecond))
+		}
+	}
+	if r1.err == nil {
+		ok = append(ok, r1)
+	}
+	// If we already have a successful result, give the second probe a
+	// 200ms grace window so we can still pick the lower-latency endpoint.
+	// Otherwise wait indefinitely — the second probe is our last chance.
+	if len(ok) > 0 {
+		timer := time.NewTimer(200 * time.Millisecond)
+		select {
+		case r2 := <-ch:
+			timer.Stop()
+			if verbose {
+				if r2.err != nil {
+					fmt.Printf("%-6s unavailable (%v)\n", r2.ep.Name, r2.err)
+				} else {
+					fmt.Printf("%-6s %s\n", r2.ep.Name, r2.latency.Round(time.Millisecond))
+				}
+			}
+			if r2.err == nil {
+				ok = append(ok, r2)
+			}
+		case <-timer.C:
+		}
+	} else {
+		r2 := <-ch
 		if verbose {
-			if r.err != nil {
-				fmt.Printf("%-6s unavailable (%v)\n", r.ep.Name, r.err)
+			if r2.err != nil {
+				fmt.Printf("%-6s unavailable (%v)\n", r2.ep.Name, r2.err)
 			} else {
-				fmt.Printf("%-6s %s\n", r.ep.Name, r.latency.Round(time.Millisecond))
+				fmt.Printf("%-6s %s\n", r2.ep.Name, r2.latency.Round(time.Millisecond))
 			}
 		}
-		if r.err == nil {
-			ok = append(ok, r)
+		if r2.err == nil {
+			ok = append(ok, r2)
 		}
 	}
 	if len(ok) == 0 {

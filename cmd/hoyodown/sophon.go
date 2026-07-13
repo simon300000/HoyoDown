@@ -1187,6 +1187,11 @@ func downloadAssets(ctx context.Context, client *http.Client, assets []asset, ou
 
 func writeAsset(ctx context.Context, client *http.Client, a asset, outputDir string, progress func(int64)) error {
 	outputPath := filepath.Join(outputDir, filepath.FromSlash(a.Name))
+	// Guard against path traversal: ensure the resolved path stays under outputDir.
+	cleanOutput := filepath.Clean(outputDir) + string(os.PathSeparator)
+	if !strings.HasPrefix(filepath.Clean(outputPath), cleanOutput) {
+		return fmt.Errorf("asset path escapes output directory: %s", a.Name)
+	}
 	tempPath := outputPath + "_tempUpdate"
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 		return err

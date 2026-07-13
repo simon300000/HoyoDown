@@ -371,7 +371,7 @@ func downloadSelection(ctx context.Context, c *http.Client, ep endpoint, game, v
 	if threads < 1 {
 		threads = runtime.NumCPU()
 	}
-	return downloadAssets(ctx, c, assets, outDir, threads, total, total, false)
+	return downloadAssets(ctx, c, assets, outDir, threads, total, total, o.silent)
 }
 
 func sophonAssets(ctx context.Context, c *http.Client, ep endpoint, game, ver, pkg, branch string) ([]asset, int64, error) {
