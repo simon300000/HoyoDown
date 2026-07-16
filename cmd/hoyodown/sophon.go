@@ -1200,7 +1200,11 @@ func writeAsset(ctx context.Context, client *http.Client, a asset, outputDir str
 	oldPath := outputPath
 	oldFile, _ := os.Open(oldPath)
 	if oldFile != nil {
-		defer oldFile.Close()
+		defer func() {
+			if oldFile != nil {
+				_ = oldFile.Close()
+			}
+		}()
 	}
 
 	out, err := os.OpenFile(tempPath, os.O_CREATE|os.O_RDWR, 0o644)
@@ -1216,6 +1220,14 @@ func writeAsset(ctx context.Context, client *http.Client, a asset, outputDir str
 		if err := writeChunk(ctx, client, a, ch, oldFile, out, progress); err != nil {
 			return err
 		}
+	}
+	// Windows does not allow replacing a file while it is open without
+	// FILE_SHARE_DELETE. Close the old asset before renaming its replacement.
+	if oldFile != nil {
+		if err := oldFile.Close(); err != nil {
+			return err
+		}
+		oldFile = nil
 	}
 	if err := out.Close(); err != nil {
 		return err
